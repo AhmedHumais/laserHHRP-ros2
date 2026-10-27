@@ -39,7 +39,8 @@ serial port while the nodes run.
 **Arduino IDE:** open `arduino_nano/arduino_nano.ino`, choose board *Arduino Nano*, processor
 *ATmega328P* (or *ATmega328P (Old Bootloader)* for many clones), the port, then *Upload*.
 
-**PlatformIO:** in this folder, `pio run` builds and `pio run -t upload` flashes.
+**PlatformIO:** in this folder, `pio run` builds and `pio run -t upload` flashes a Nano with the
+old bootloader (most clones); `pio run -e nano_new -t upload` one with the new bootloader.
 
 Stop the ROS 2 nodes before uploading: they keep the serial port open.
 
