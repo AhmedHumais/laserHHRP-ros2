@@ -7,6 +7,7 @@ can run on any machine on the same network and `ROS_DOMAIN_ID` (e.g. a PC for a 
 
 Source: `src/gui/operator_panel.cpp`, registered by `plugins.xml` (class
 `laser_hhrp/OperatorPanel`, library `laser_hhrp_gui`), layout `config/hhrp.rviz`, started by
+`ros2 launch laser_hhrp hhrp.launch.py` (launch argument `ui`, default `true`) or alone by
 `ros2 launch laser_hhrp ui.launch.py`.
 
 ## Interfaces

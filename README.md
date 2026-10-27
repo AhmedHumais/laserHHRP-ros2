@@ -220,20 +220,22 @@ can run on any computer on the same network.
 2. Build the package on the PC as in section 4 (the SDK is not needed there).
 3. PC and Pi on the same network (Ethernet or Wi-Fi), with the same `ROS_DOMAIN_ID` (default 0;
    if other ROS systems share the network, put `export ROS_DOMAIN_ID=<n>` in `~/.bashrc` on both).
-4. Start the nodes on the Pi (section 10), then on the PC:
+4. Start the nodes on the Pi **without** the UI (`ros2 launch laser_hhrp hhrp.launch.py ui:=false`),
+   then on the PC:
 
    ```bash
    ros2 topic list                 # /scan/status must be listed: the PC sees the Pi
    ros2 launch laser_hhrp ui.launch.py
    ```
 
-**On the Pi with a touchscreen:** install `ros-jazzy-desktop` on the Pi, rebuild the package (the
-panel is only built when RViz is installed) and run `ros2 launch laser_hhrp ui.launch.py` from the
-Pi's desktop.
+**On the Pi with a touchscreen:** install `ros-jazzy-desktop` on the Pi and rebuild the package (the
+panel is only built when RViz is installed). `ros2 launch laser_hhrp hhrp.launch.py` from the
+Pi's desktop then opens the UI together with the nodes (launch argument `ui`, default `true`).
 
 ## 9. First run, step by step
 
-1. **Nano.** Connect the Nano and start the nodes: `ros2 launch laser_hhrp hhrp.launch.py`.
+1. **Nano.** Connect the Nano and start the nodes: `ros2 launch laser_hhrp hhrp.launch.py`
+   (add `ui:=false` on a Pi without a screen and start the UI on the PC, section 8).
    `ros2 topic echo /imu/data` shows about 9.81 m/s² on the axis pointing up;
    `ros2 topic echo /nano/encoder` changes when you turn the roller by hand. Without the laser the
    panel shows "laser profiler disconnected" (expected).
@@ -261,11 +263,15 @@ Pi's desktop.
 ## 10. Everyday use
 
 ```bash
-ros2 launch laser_hhrp hhrp.launch.py                         # software sync
+ros2 launch laser_hhrp hhrp.launch.py                         # all nodes + operator UI, software sync
 ros2 launch laser_hhrp hhrp.launch.py hardware_trigger:=true  # hardware sync (D3 -> In1 wired)
+ros2 launch laser_hhrp hhrp.launch.py ui:=false               # without the UI (Pi without a screen)
 ros2 launch laser_hhrp hhrp.launch.py nano_port:=/dev/ttyACM0 # another serial port
-ros2 launch laser_hhrp ui.launch.py                           # operator UI (PC or Pi)
+ros2 launch laser_hhrp ui.launch.py                           # the UI alone (e.g. on a PC)
 ```
+
+Launch arguments (combine freely): `ui` (default `true`), `hardware_trigger` (`false`),
+`simulate` (`false`), `nano_port` (`/dev/ttyUSB0`), `params_file` (`config/hhrp.yaml`).
 
 Panel buttons (each is a service: `ros2 service call /<name> std_srvs/srv/Trigger`):
 
@@ -294,7 +300,7 @@ After=network-online.target
 
 [Service]
 User=$USER
-ExecStart=/bin/bash -c "source /opt/ros/jazzy/setup.bash && source $HOME/ros2_ws/install/setup.bash && ros2 launch laser_hhrp hhrp.launch.py"
+ExecStart=/bin/bash -c "source /opt/ros/jazzy/setup.bash && source $HOME/ros2_ws/install/setup.bash && ros2 launch laser_hhrp hhrp.launch.py ui:=false"
 Restart=on-failure
 
 [Install]
@@ -310,7 +316,7 @@ All nodes except the drivers run unchanged; a simulator stands in for the Nano a
 (a rolling roller, a flat surface with one rivet head at 20 mm):
 
 ```bash
-ros2 launch laser_hhrp hhrp.launch.py simulate:=true          # terminal 1 (add hardware_trigger:=true for hardware sync)
+ros2 launch laser_hhrp hhrp.launch.py simulate:=true          # terminal 1 (add hardware_trigger:=true for hardware sync, ui:=false without a screen)
 ros2 run laser_hhrp timed_scan.py 3                            # terminal 2: calibrate, scan 3 s, stop
 ros2 run laser_hhrp check_session.py                           # checks positions, IMU and the rivet position
 ```
@@ -328,6 +334,7 @@ ros2 run laser_hhrp check_session.py                           # checks position
 | Hardware sync: "no profiles in 5 s" | Trigger wire D3 → In1, GND → GND-In1; roll while scanning |
 | "profiles cannot be matched to triggers" | Trigger wire; laser input level (TTL 5 V) |
 | Overspeed warnings | Roll slower (max speed = 120 Hz × pitch ≈ 11 mm/s by default), or a larger `encoder.counts_per_trigger` |
+| RViz dies at start (`could not connect to display`, `symbol lookup error`) | No screen: start with `ui:=false`; started from a VS Code (snap) terminal: use a normal terminal |
 | UI on the PC: "Waiting for the laser roller ..." | Same network and `ROS_DOMAIN_ID`; `ros2 topic list` on the PC shows `/scan/status`; firewall |
 | "calibration required" | Calibrate the gyro (section 9, step 3) |
 

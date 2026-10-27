@@ -23,14 +23,15 @@ scanCONTROL SDK" and you can work with `simulate:=true`.
 ## Run
 
 ```bash
-ros2 launch laser_hhrp hhrp.launch.py                          # hardware, software sync
+ros2 launch laser_hhrp hhrp.launch.py                          # hardware, software sync, with the UI
 ros2 launch laser_hhrp hhrp.launch.py hardware_trigger:=true   # hardware sync (Nano D3 -> laser In1)
 ros2 launch laser_hhrp hhrp.launch.py simulate:=true           # no hardware at all
-ros2 launch laser_hhrp ui.launch.py                            # RViz with the operator panel
+ros2 launch laser_hhrp hhrp.launch.py ui:=false                # without RViz (Pi without a screen)
+ros2 launch laser_hhrp ui.launch.py                            # RViz with the operator panel alone (e.g. on a PC)
 ```
 
-Launch arguments: `simulate`, `hardware_trigger`, `nano_port` (default `/dev/ttyUSB0`),
-`params_file` (default `config/hhrp.yaml`).
+Launch arguments: `ui` (default `true`: also starts RViz with the operator panel), `simulate`,
+`hardware_trigger`, `nano_port` (default `/dev/ttyUSB0`), `params_file` (default `config/hhrp.yaml`).
 
 Operator actions (the panel buttons call the same services):
 
@@ -49,7 +50,7 @@ ros2 topic echo /scan/status
 Test the whole chain without hardware:
 
 ```bash
-ros2 launch laser_hhrp hhrp.launch.py simulate:=true     # terminal 1 (add hardware_trigger:=true for the other mode)
+ros2 launch laser_hhrp hhrp.launch.py simulate:=true     # terminal 1 (add hardware_trigger:=true for the other mode, ui:=false without a screen)
 ros2 run laser_hhrp timed_scan.py 3                       # terminal 2: calibrate, scan 3 s, stop
 ros2 run laser_hhrp check_session.py                      # frames, positions, IMU, simulated rivet at 20 mm
 colcon test --packages-select laser_hhrp && colcon test-result --verbose   # unit tests
@@ -136,7 +137,7 @@ Plain C++ without ROS: easy to read and unit-tested in `test/test_logic.cpp`.
 
 | File | What it does |
 | --- | --- |
-| `launch/hhrp.launch.py` | Starts all nodes (or the simulator instead of the drivers) |
+| `launch/hhrp.launch.py` | Starts all nodes (or the simulator instead of the drivers) and, unless `ui:=false`, the UI |
 | `launch/ui.launch.py` | Starts RViz with the operator panel |
 | `config/hhrp.yaml` | All parameters (sensor, scan speed, system, calibration, inspection) |
 | `config/hhrp.rviz` | RViz layout: operator panel, live profile, 3D scan |
