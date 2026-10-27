@@ -1,0 +1,55 @@
+# Parameters of all laser_hhrp nodes (loaded by launch/hhrp.launch.py). "/**" = every node; each
+# node uses the keys it needs. Change a value here, or at run time:
+#   ros2 param set /scan_controller encoder.counts_per_trigger 8
+/**:
+  ros__parameters:
+    # ---- synchronization ----
+    # sync.hardware_trigger and nano.port are set by the launch arguments hardware_trigger and
+    # nano_port (hhrp.launch.py): true = Nano D3 wired to laser In1 (one profile per pitch),
+    # false = laser free running, software synchronization.
+    sync.software_rate_hz: 120.0     # software sync: laser profile rate (scanCONTROL 2900 full
+                                     # field: max ~140; above it the scanner drops to ~18/s)
+    sync.profile_latency_s: 0.002    # software sync: subtracted from the profile time
+
+    # ---- Nano ----
+    nano.baud: 1000000               # = SERIAL_BAUD in arduino_nano.ino
+    imu.period_ms: 0                 # IMU period on the Nano; 0 = firmware default (240 Hz)
+
+    # ---- encoder / roller ----
+    encoder.counts_per_turn: 4096    # AMT222C-V 12 bit; AMT223x 14 bit = 16384
+    encoder.roller_diameter_m: 0.030 # measured by the extrinsic calibration once done
+    encoder.counts_per_trigger: 4    # profile pitch = counts_per_trigger * pi * d / counts_per_turn
+    encoder.direction_sign: 1        # +1 if the count increases when rolling forward
+
+    # ---- laser ----
+    laser.interface: "192.168.144.15"  # scanner IP; "" = the first one found
+    laser.resolution: 1280           # points per profile
+    laser.exposure_time_us: 100      # multiples of 10 us
+    laser.max_profile_rate_hz: 120.0 # hardware sync never triggers faster; max speed = rate * pitch
+    laser.live_view_every: 10        # one live-view profile (laser/profile) per this many
+
+    # ---- scan speed ----
+    speed.warning_fraction: 0.8      # warn above this fraction of the maximum speed
+    speed.min_speed_mps: 0.001       # below it while scanning: roller stalled
+    speed.stall_timeout_s: 2.0
+
+    # ---- system ----
+    system.tilt_limit_rad: 0.087     # 5 deg
+    system.vibration_limit_radps: 1.0
+    system.storage_path: ~/laser_hhrp/scans
+    system.storage_min_free_mb: 500.0
+
+    # ---- calibration ----
+    calibration.file: ~/laser_hhrp/calibration.yaml   # per device, written by calibration_node
+    calibration.duration_s: 2.0      # gyro calibration: seconds of stillness
+    calibration.max_gyro_std_radps: 0.02
+
+    # ---- inspection (inspection_node) ----
+    inspection.flushness_tolerance_m: 0.00005
+    inspection.countersink_tolerance_m: 0.00005
+    inspection.fastener_type: rivet
+    inspection.fastener_diameter_m: 0.005
+    inspection.surface_deviation_limit_m: 0.0001
+
+    # ---- simulation (simulator_node) ----
+    sim.speed_mps: 0.02              # simulated rolling speed

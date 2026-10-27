@@ -1,0 +1,164 @@
+// Unit tests of the plain logic in include/laser_hhrp (no ROS graph needed).
+#include <gtest/gtest.h>
+
+#include <cmath>
+#include <cstdio>
+
+#include "laser_hhrp/calibration_data.hpp"
+#include "laser_hhrp/clock_sync.hpp"
+#include "laser_hhrp/frame_pairer.hpp"
+#include "laser_hhrp/gyro_calibrator.hpp"
+#include "laser_hhrp/monitor_rules.hpp"
+#include "laser_hhrp/scanner_clock.hpp"
+#include "laser_hhrp/serial_protocol.hpp"
+#include "laser_hhrp/software_pairer.hpp"
+
+using namespace laser_hhrp;
+
+namespace {
+// Irregular hand-held intervals (ms) between triggers.
+const double kIntervalsMs[] = {9, 11, 8.5, 12, 10, 9.5, 13, 8, 10.5, 11.5, 9, 12.5, 10, 8.8, 11.2};
+
+Trigger trigger(uint32_t index, int64_t t_ns) {
+  Trigger t;
+  t.index = index;
+  t.device_ns = t_ns;
+  t.count = static_cast<int32_t>(4 * (index + 1));
+  t.direction = 1;
+  return t;
+}
+Raw profile(uint32_t counter, double shutter_s, int64_t pi_ns) {
+  Raw r;
+  r.profile_counter = counter;
+  r.shutter_open_s = shutter_s;
+  r.stamp_ns = pi_ns;
+  return r;
+}
+}  // namespace
+
+TEST(FramePairer, PairsByNumberAndCountsALostProfile) {
+  FramePairer pairer;
+  int64_t t = 1000000000;
+  const uint32_t first_counter = 5000;  // the scanner's counter does not start at 0
+  for (uint32_t k = 0; k < 15; ++k) {
+    t += static_cast<int64_t>(kIntervalsMs[k] * 1e6);
+    pairer.add_trigger(trigger(k, t), t);
+    if (k != 10) pairer.add_profile(profile(first_counter + k, 20.0 + t * 1e-9, t + 3000000));
+  }
+  ASSERT_TRUE(pairer.locked());
+  auto pairs = pairer.take(t + 10000000);
+  EXPECT_EQ(pairs.size(), 14u);
+  for (const auto& p : pairs) {
+    EXPECT_EQ(p.profile.profile_counter - first_counter, p.trigger.index);
+    EXPECT_FALSE(p.timing_mismatch);
+  }
+  pairer.take(t + 2000000000);  // the trigger without a profile gives up
+  EXPECT_EQ(pairer.stats().missing_profiles, 1u);
+}
+
+TEST(SoftwarePairer, InterpolatesTheCountAtTheProfileTime) {
+  SoftwarePairer pairer(0.0);
+  for (int i = 0; i < 3; ++i) {
+    Trigger ref;
+    ref.device_ns = i * 10000000;
+    ref.count = i * 100;
+    pairer.add_record(ref, 1000000000 + i * 10000000);  // Pi time = Nano time + 1 s
+  }
+  pairer.add_profile(profile(0, 0, 1000000000 + 5000000));  // halfway between the first two
+  auto pairs = pairer.take(1000000000 + 30000000);
+  ASSERT_EQ(pairs.size(), 1u);
+  EXPECT_EQ(pairs[0].trigger.count, 50);
+  EXPECT_EQ(pairs[0].trigger.device_ns, 5000000);
+}
+
+TEST(ClockSync, FindsOffsetAndDrift) {
+  ClockSync clock;
+  const double drift = 20e-6;
+  for (uint32_t i = 1; i <= 20; ++i) {
+    const int64_t host_send = 5000000000LL + i * 500000000LL;
+    const int64_t device = static_cast<int64_t>((host_send + 500000 - 5000000000LL) / (1 + drift));
+    clock.sent(i, host_send);
+    ASSERT_TRUE(clock.reply(i, host_send, device, device, host_send + 1000000));
+  }
+  EXPECT_NEAR(clock.drift(), drift, 1e-7);
+  const int64_t device = 3000000000LL;
+  EXPECT_NEAR(static_cast<double>(clock.to_host(device)), 5000000000.0 + device * (1 + drift), 2000.0);
+}
+
+TEST(ScannerClock, RemovesArrivalJitter) {
+  ScannerClock clock;
+  int64_t mapped = 0;
+  for (int i = 0; i < 100; ++i) {
+    const double scanner_s = 10.0 + i * 0.008;
+    const int64_t arrival = 1000000000000LL + static_cast<int64_t>(i * 8e6) + (i % 7) * 300000 + 2000000;
+    mapped = clock.map(scanner_s, scanner_s, arrival);
+  }
+  // Pi time = scanner time + the smallest delay (2 ms), whatever the jitter.
+  EXPECT_NEAR(static_cast<double>(mapped), 1000000000000.0 + 99 * 8e6 + 2e6, 1000.0);
+}
+
+TEST(SerialProtocol, EncodeThenRead) {
+  protocol::TriggerPacket t{123456789ULL, 42, -17, -1, 1};
+  const auto bytes = protocol::encode(protocol::PKT_TRIGGER, t);
+  protocol::PacketReader reader;
+  reader.push(0x00);  // noise before the packet is skipped
+  bool complete = false;
+  for (uint8_t b : bytes) complete = reader.push(b);
+  ASSERT_TRUE(complete);
+  protocol::TriggerPacket out{};
+  ASSERT_TRUE(reader.payload(out));
+  EXPECT_EQ(out.time_us, 123456789ULL);
+  EXPECT_EQ(out.index, 42u);
+  EXPECT_EQ(out.count, -17);
+  EXPECT_EQ(out.direction, -1);
+  auto bad = bytes;
+  bad[6] ^= 0xFF;  // corrupted payload
+  for (uint8_t b : bad) complete = reader.push(b);
+  EXPECT_FALSE(complete);
+  EXPECT_EQ(reader.errors(), 1u);
+}
+
+TEST(GyroCalibrator, AveragesTheBiasWhileStill) {
+  GyroCalibrator cal;
+  cal.start(0);
+  int64_t t = 0;
+  for (int i = 0; i < 1000 && cal.state() == GyroCalibrator::State::collecting; ++i) {
+    t += 4000000;
+    cal.imu({0.01 + (i % 2 ? 1e-3 : -1e-3), -0.02, 0.005}, {0, 0, 9.81}, t);
+  }
+  ASSERT_EQ(cal.state(), GyroCalibrator::State::done);
+  EXPECT_NEAR(cal.bias()[0], 0.01, 1e-4);
+  EXPECT_NEAR(cal.bias()[1], -0.02, 1e-6);
+}
+
+TEST(CalibrationFile, SaveAndLoad) {
+  CalibrationData c;
+  c.gyro_calibrated = true;
+  c.gyro_bias_radps = {0.1, 0.2, 0.3};
+  c.extrinsics.calibrated = true;
+  c.extrinsics.metres_per_count = 2.4e-5;
+  c.extrinsics.encoder_direction_sign = -1;
+  const std::string path = testing::TempDir() + "/calibration_test.yaml";
+  ASSERT_TRUE(calibration_file::save(path, c));
+  CalibrationData loaded;
+  std::string error;
+  ASSERT_TRUE(calibration_file::load(path, loaded, error)) << error;
+  EXPECT_TRUE(loaded.gyro_calibrated);
+  EXPECT_DOUBLE_EQ(loaded.gyro_bias_radps[2], 0.3);
+  EXPECT_DOUBLE_EQ(loaded.extrinsics.metres_per_count, 2.4e-5);
+  EXPECT_EQ(loaded.extrinsics.encoder_direction_sign, -1);
+  std::remove(path.c_str());
+}
+
+TEST(MonitorRules, SpeedAndDevices) {
+  MonitorInput in;
+  in.scanning = true;
+  in.max_speed_mps = 0.1;
+  in.speed_mps = 0.09;
+  auto f = evaluate(in);
+  ASSERT_EQ(f.size(), 1u);
+  EXPECT_EQ(f[0].severity, Severity::WARNING);  // close to the maximum
+  in.laser_ok = false;
+  f = evaluate(in);
+  EXPECT_EQ(f[0].severity, Severity::FATAL);
+}

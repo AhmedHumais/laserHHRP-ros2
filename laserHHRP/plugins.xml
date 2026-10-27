@@ -1,0 +1,5 @@
+<library path="laser_hhrp_gui">
+  <class name="laser_hhrp/OperatorPanel" type="laser_hhrp::OperatorPanel" base_class_type="rviz_common::Panel">
+    <description>Laser roller operator panel: scan and calibration buttons, live scan status.</description>
+  </class>
+</library>
